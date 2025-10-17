@@ -1,0 +1,76 @@
+name: Build Kwrt
+
+on:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: 'Base (e.g., Kwrt)'
+        required: true
+        default: 'Kwrt'
+      branch:
+        description: 'Branch (e.g., openwrt-23.05)'
+        required: true
+        default: 'openwrt-23.05'
+      target:
+        description: 'Target (e.g., amlogic/meson8b)'
+        required: true
+        default: 'amlogic/meson8b'
+      device:
+        description: 'Device (e.g., thunder-onecloud)'
+        required: true
+        default: 'thunder-onecloud'
+      image_type:
+        description: 'Image Type (e.g., sysupgrade-ext4)'
+        required: true
+        default: 'sysupgrade-ext4'
+      packages:
+        description: 'Packages (space-separated)'
+        required: false
+        default: 'luci-app-attendedsysupgrade'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang flex bison g++ gawk \
+            gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev \
+            python3-pyelftools rsync subversion swig unzip zlib1g-dev \
+            file python3 python3-pip time xsltproc
+
+      - name: Clone Kwrt source
+        run: |
+          git clone --depth 1 -b ${{ github.event.inputs.branch }} https://github.com/kiddin9/Kwrt.git kwrt
+          cd kwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Configure build
+        run: |
+          cd kwrt
+          echo "CONFIG_TARGET_${{ github.event.inputs.target }}=y" >> .config
+          echo "CONFIG_TARGET_${{ github.event.inputs.target }}_${{ github.event.inputs.device }}=y" >> .config
+          echo "CONFIG_SIGNED_PACKAGES=" >> .config
+          echo "CONFIG_ALL_KMODS=y" >> .config
+          echo "CONFIG_PACKAGE_${{ github.event.inputs.packages }}=y" >> .config
+          echo "CONFIG_TARGET_ROOTFS_EXT4FS=y" >> .config
+          echo "CONFIG_TARGET_IMAGES_GZIP=n" >> .config
+          make defconfig
+
+      - name: Download and build
+        run: |
+          cd kwrt
+          make download -j$(nproc)
+          make -j$(nproc) V=s
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kwrt-firmware
+          path: kwrt/bin/targets/${{ github.event.inputs.target }}/*.bin
+          retention-days: 5
