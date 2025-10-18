@@ -27,7 +27,9 @@ on:
         description: 'Packages (space-separated)'
         required: false
         default: 'luci-app-attendedsysupgrade'
-
+env:
+  REPO_URL: https://github.com/kiddin9/Kwrt
+  REPO_BRANCH: master  # 如果 master 不稳，试 openwrt-23.05
 jobs:
   build:
     runs-on: ubuntu-latest
