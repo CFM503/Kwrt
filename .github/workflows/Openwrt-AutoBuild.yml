@@ -11,6 +11,31 @@ name: Build OpenWrt
 on: 
   #repository_dispatch:
   workflow_dispatch:
+    inputs:
+      base:
+        description: 'Base (e.g., Kwrt)'
+        required: true
+        default: 'Kwrt'
+      branch:
+        description: 'Branch (e.g., openwrt-23.05)'
+        required: true
+        default: 'openwrt-23.05'
+      target:
+        description: 'Target (e.g., amlogic/meson8b)'
+        required: true
+        default: 'amlogic/meson8b'
+      device:
+        description: 'Device (e.g., thunder-onecloud)'
+        required: true
+        default: 'thunder-onecloud'
+      image_type:
+        description: 'Image Type (e.g., sysupgrade-ext4)'
+        required: true
+        default: 'sysupgrade-ext4'
+      packages:
+        description: 'Packages (space-separated)'
+        required: false
+        default: 'luci-app-attendedsysupgrade'
 
 env:
   REPO_TOKEN: ${{ secrets.TOKEN_KIDDIN9 }}
@@ -23,6 +48,8 @@ env:
   DOCKER_ID: ${{ secrets.DOCKER_ID }}
   DOCKER_PASSWD: ${{ secrets.DOCKER_PASSWD }}
   TZ: Asia/Shanghai
+  REPO_URL: https://github.com/kiddin9/Kwrt
+  REPO_BRANCH: master
 
 jobs:
   build:
