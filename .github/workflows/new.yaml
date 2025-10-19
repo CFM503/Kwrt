@@ -1,78 +1,71 @@
-name: Build Kwrt
+name: Build OpenWrt
 
 on:
   workflow_dispatch:
-    inputs:
-      base:
-        description: 'Base (e.g., Kwrt)'
-        required: true
-        default: 'Kwrt'
-      branch:
-        description: 'Branch (e.g., openwrt-23.05)'
-        required: true
-        default: 'openwrt-23.05'
-      target:
-        description: 'Target (e.g., amlogic/meson8b)'
-        required: true
-        default: 'amlogic/meson8b'
-      device:
-        description: 'Device (e.g., thunder-onecloud)'
-        required: true
-        default: 'thunder-onecloud'
-      image_type:
-        description: 'Image Type (e.g., sysupgrade-ext4)'
-        required: true
-        default: 'sysupgrade-ext4'
-      packages:
-        description: 'Packages (space-separated)'
-        required: false
-        default: 'luci-app-attendedsysupgrade'
-env:
-  REPO_URL: https://github.com/kiddin9/Kwrt
-  REPO_BRANCH: master  # 如果 master 不稳，试 openwrt-23.05
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential clang flex bison g++ gawk \
-            gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev \
-            python3-pyelftools rsync subversion swig unzip zlib1g-dev \
-            file python3 python3-pip time xsltproc
+          sudo apt-get -y install build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev python3 python3-pip unzip zlib1g-dev file rsync subversion swig libpython3-dev python3-setuptools
+          sudo pip3 install pyyaml
 
-      - name: Clone Kwrt source
+      - name: Clone source code
+        env:
+          REPO_URL: https://github.com/kiddin9/Kwrt
+          REPO_BRANCH: openwrt-23.05  # 改用稳定分支，避免 master 问题
         run: |
-          git clone --depth 1 -b ${{ github.event.inputs.branch }} https://github.com/kiddin9/Kwrt.git kwrt
-          cd kwrt
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
+          git clone $REPO_URL -b $REPO_BRANCH openwrt
+          cd openwrt
+          # 确保 feeds.conf.default 存在，如果缺失用官方源
+          if [ ! -f feeds.conf.default ]; then
+            echo "src-git packages https://github.com/openwrt/packages.git" > feeds.conf.default
+            echo "src-git luci https://github.com/openwrt/luci.git" >> feeds.conf.default
+            echo "src-git routing https://github.com/openwrt-routing/packages.git" >> feeds.conf.default
+            echo "src-git telephony https://github.com/openwrt/telephony.git" >> feeds.conf.default
+          fi
 
-      - name: Configure build
+      - name: Update and install feeds
         run: |
-          cd kwrt
-          echo "CONFIG_TARGET_${{ github.event.inputs.target }}=y" >> .config
-          echo "CONFIG_TARGET_${{ github.event.inputs.target }}_${{ github.event.inputs.device }}=y" >> .config
-          echo "CONFIG_SIGNED_PACKAGES=" >> .config
-          echo "CONFIG_ALL_KMODS=y" >> .config
-          echo "CONFIG_PACKAGE_${{ github.event.inputs.packages }}=y" >> .config
-          echo "CONFIG_TARGET_ROOTFS_EXT4FS=y" >> .config
-          echo "CONFIG_TARGET_IMAGES_GZIP=n" >> .config
-          make defconfig
+          cd openwrt
+          ./scripts/feeds update -a || { echo "Feeds update failed - retrying with verbose"; ./scripts/feeds update -a -v; exit 1; }
+          ./scripts/feeds install -a || { echo "Feeds install failed"; exit 1; }
 
-      - name: Download and build
+      - name: Load custom configuration
         run: |
-          cd kwrt
-          make download -j$(nproc)
-          make -j$(nproc) V=s
+          cd openwrt
+          [ -f $GITHUB_WORKSPACE/DIY-Part1.sh ] && bash $GITHUB_WORKSPACE/DIY-Part1.sh || echo "No DIY-Part1.sh, skipping"
+
+      - name: Generate configuration
+        run: |
+          cd openwrt
+          make defconfig || { echo "make defconfig failed"; exit 1; }
+
+      - name: Download source
+        run: |
+          cd openwrt
+          make -j$(nproc) download V=s || { echo "Download failed"; exit 1; }
+
+      - name: Build firmware
+        run: |
+          cd openwrt
+          make -j$(nproc) V=s || { echo "Build failed"; exit 1; }
+
+      - name: Package artifacts
+        run: |
+          cd openwrt
+          mkdir -p artifacts
+          find bin/targets/amlogic/meson8b -name "*-sysupgrade.bin" -exec cp {} artifacts/ \; || echo "No meson8b sysupgrade found - check config"
+          ls -la artifacts/ || echo "Artifacts empty"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: kwrt-firmware
-          path: kwrt/bin/targets/${{ github.event.inputs.target }}/*.bin
-          retention-days: 5
+          name: OpenWrt_firmware
+          path: openwrt/artifacts/
