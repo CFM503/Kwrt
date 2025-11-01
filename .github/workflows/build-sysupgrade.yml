@@ -1,1 +1,79 @@
 
+name: Build Kwrt Sysupgrade Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'TARGET (例: amlogic)'
+        required: true
+        default: 'amlogic'
+      subtarget:
+        description: 'SUBTARGET / target triplet (例: meson8b)'
+        required: true
+        default: 'meson8b'
+      profile:
+        description: 'PROFILE (设备机型/配置名, 留空可让构建生成所有可用映像)'
+        required: false
+        default: ''
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      # 需要构建的并行线程 (适度设置以免超 Actions 限制)
+      MAKEFLAGS: "-j2"
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup basic packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential ccache subversion libncurses5-dev gawk flex gettext git python3 unzip file time
+
+      - name: Setup ccache (speed up)
+        run: |
+          mkdir -p $HOME/.ccache
+          echo "max_size = 1.0G" > $HOME/.ccache/ccache.conf
+          export PATH="/usr/lib/ccache:$PATH"
+
+      - name: Cache feeds/build_dir/binpkgs
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cache
+            dl
+            build_dir
+            tmp
+          key: ${{ runner.os }}-kwrt-${{ github.ref }}-${{ hashFiles('**/Makefile','**/feeds.conf*') }}
+          restore-keys: |
+            ${{ runner.os }}-kwrt-
+
+      - name: Update feeds
+        run: |
+          ./scripts/feeds update -a || true
+          ./scripts/feeds install -a || true
+
+      - name: Run custom CI build script
+        id: build
+        run: |
+          chmod +x ./scripts/ci_build.sh
+          ./scripts/ci_build.sh "${{ github.event.inputs.target }}" "${{ github.event.inputs.subtarget }}" "${{ github.event.inputs.profile }}" || exit 1
+
+      - name: Upload generated images
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kwrt-images-${{ github.sha }}
+          path: |
+            bin/targets/${{ github.event.inputs.target }}/${{ github.event.inputs.subtarget }}/*.bin
+            bin/targets/${{ github.event.inputs.target }}/${{ github.event.inputs.subtarget }}/*.img
+            bin/targets/${{ github.event.inputs.target }}/${{ github.event.inputs.subtarget }}/**/*sysupgrade*
+            bin/targets/${{ github.event.inputs.target }}/${{ github.event.inputs.subtarget }}/**/*-factory*
