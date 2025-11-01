@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install build dependencies
         run: |
@@ -30,19 +32,19 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Apply Kwrt config & patches
+      - name: Prepare .config for build
         run: |
           cd openwrt
-          cp -f ../config/openwrt.config .config || true
-          [ -d "../patches" ] && find ../patches -type f -name "*.patch" -exec git apply {} \;
-
-      - name: Enable squashfs + sysupgrade support
-        run: |
-          cd openwrt
+          if [ -f ../ci_configs/${{ env.PROFILE }}.config ]; then
+            echo "Using custom config ../ci_configs/${{ env.PROFILE }}.config"
+            cp ../ci_configs/${{ env.PROFILE }}.config .config
+          else
+            echo "No custom config found — generating default"
+            echo "CONFIG_TARGET_${{ env.TARGET }}=y" >> .config
+            echo "CONFIG_TARGET_${{ env.TARGET }}_${{ env.SUBTARGET }}=y" >> .config
+          fi
           echo "CONFIG_TARGET_ROOTFS_SQUASHFS=y" >> .config
           echo "CONFIG_TARGET_IMAGES_GZIP=y" >> .config
-          echo "CONFIG_TARGET_ROOTFS_CPIOGZ=n" >> .config
-          echo "CONFIG_TARGET_ROOTFS_EXT4FS=n" >> .config
           make defconfig
 
       - name: Build RootFS & Kernel
@@ -62,5 +64,5 @@ jobs:
         with:
           name: onecloud-firmware
           path: |
-            openwrt/bin/targets/*/*/*.img.gz
-            openwrt/bin/targets/*/*/*-sysupgrade.tar
+            openwrt/bin/targets/${{ env.TARGET }}/${{ env.SUBTARGET }}/*.img.gz
+            openwrt/bin/targets/${{ env.TARGET }}/${{ env.SUBTARGET }}/*-sysupgrade.tar
