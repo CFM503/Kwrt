@@ -55,7 +55,7 @@ jobs:
       - name: Generate Amlogic EMMC / Sysupgrade Images
         run: |
           cd openwrt
-          git clone https://github.com/kiddin9/amlogic-s9xxx-openwrt.git amlogic
+          git clone https://github.com/ophub/amlogic-s9xxx-openwrt.git amlogic
           chmod +x amlogic/*.sh
           sudo amlogic/mk_emmc_image.sh -s squashfs -d onecloud
 
